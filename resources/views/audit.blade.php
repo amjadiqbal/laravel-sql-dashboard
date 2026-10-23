@@ -10,7 +10,7 @@
         <button class="btn" type="submit">Filter</button>
     </form>
     <div class="table-wrap" style="max-height:none">
-        <table class="data">
+        <table class="data" style="min-width:900px">
             <thead><tr><th>When</th><th>Who</th><th>Source</th><th>Status</th><th>Query</th><th>Rows</th><th>ms</th><th>Statement</th></tr></thead>
             <tbody>
             @forelse ($entries as $e)
