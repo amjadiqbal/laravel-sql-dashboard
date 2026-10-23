@@ -24,7 +24,7 @@ Docs and demo: https://amjad.com.pk/laravel/packages/laravel-sql-dashboard
 [![License](https://img.shields.io/packagist/l/amjadiqbal/laravel-sql-dashboard.svg?style=flat-square)](LICENSE.md)
 
 <p align="center">
-  <img alt="A saved query with date and status variables, its line chart of orders per day, and the result table with a CSV download button" src="art/screenshot.png" width="100%">
+  <img alt="A Sales overview dashboard: one variable form for status and since, a line chart of revenue per day with its table, and a pie chart of orders by status" src="art/screenshot.png" width="100%">
 </p>
 
 ## Features
