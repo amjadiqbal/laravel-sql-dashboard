@@ -63,9 +63,16 @@ it('refuses UPDATE, DELETE, DROP, stacked statements and writes hidden in a CTE'
 it('has the database refuse a write on its own, even with an admin login and the guard bypassed', function (string $sql) {
     $executor = IntegrationTestCase::pg() ? new PostgresExecutor : new MysqlExecutor;
 
-    expect(fn () => $executor->run(DB::connection('root'), new CompiledStatement($sql, [], []), Limits::fromConfig()))
-        ->toThrow(QueryFailed::class, 'refused to write');
-    expect(orderCount())->toBe(120);
+    // MySQL/MariaDB: the READ ONLY transaction refuses (error 1792). PostgreSQL refuses a write inside
+    // DECLARE ... CURSOR FOR at parse time, and a write from a function (nextval) in the READ ONLY transaction.
+    try {
+        $executor->run(DB::connection('root'), new CompiledStatement($sql, [], []), Limits::fromConfig());
+        $this->fail('The database ran a write.');
+    } catch (QueryFailed $e) {
+        expect($e->getMessage())->toMatch('/refused to write|syntax error at or near "(UPDATE|DELETE)"|must not contain data-modifying/');
+    }
+    expect(orderCount())->toBe(120)
+        ->and((float) DB::connection('root')->table('orders')->sum('total'))->toBe(10890.0);
 })->with(function () {
     $cases = ['update' => ['UPDATE orders SET total = 0'], 'delete' => ['DELETE FROM orders WHERE id = 1']];
     if (IntegrationTestCase::pg()) {
