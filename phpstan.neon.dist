@@ -1,0 +1,15 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    level: 6
+    paths:
+        - src
+    tmpDir: build/phpstan
+    # PDO returns false on failure whatever its stubs say under ERRMODE_EXCEPTION; keep the defensive checks.
+    treatPhpDocTypesAsCertain: false
+    ignoreErrors:
+        # Namespaced package views (sql-dashboard::...), registered in the service provider; Larastan only knows app views.
+        - identifier: argument.type
+          paths: [src/Http/Controllers/*, src/Checks/CheckAlert.php]
+          message: '#view-string#'

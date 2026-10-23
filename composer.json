@@ -1,0 +1,87 @@
+{
+    "name": "amjadiqbal/laravel-sql-dashboard",
+    "description": "Read-only SQL dashboard for Laravel (Blazer for Laravel): saved SQL queries with typed variables, result tables with CSV export, line, bar and pie charts, dashboards, scheduled checks that alert by mail or Slack, team sharing and an audit log. Runs only on a read-only connection, one SELECT at a time, with row limits and statement timeouts on MySQL, MariaDB, PostgreSQL and SQLite.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "amjadiqbal",
+        "laravel",
+        "laravel-package",
+        "sql",
+        "sql-dashboard",
+        "dashboard",
+        "business-intelligence",
+        "bi",
+        "reporting",
+        "charts",
+        "data-alerts",
+        "blazer",
+        "mysql",
+        "postgresql",
+        "sqlite"
+    ],
+    "homepage": "https://amjad.com.pk/laravel/packages/laravel-sql-dashboard",
+    "authors": [
+        {
+            "name": "Amjad Iqbal",
+            "homepage": "https://amjad.com.pk",
+            "role": "Developer"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/amjadiqbal/laravel-sql-dashboard/issues",
+        "source": "https://github.com/amjadiqbal/laravel-sql-dashboard",
+        "docs": "https://amjad.com.pk/laravel/packages/laravel-sql-dashboard"
+    },
+    "require": {
+        "php": "^8.3",
+        "ext-json": "*",
+        "ext-pdo": "*",
+        "illuminate/console": "^12.0|^13.0",
+        "illuminate/contracts": "^12.0|^13.0",
+        "illuminate/database": "^12.0|^13.0",
+        "illuminate/http": "^12.0|^13.0",
+        "illuminate/mail": "^12.0|^13.0",
+        "illuminate/routing": "^12.0|^13.0",
+        "illuminate/support": "^12.0|^13.0",
+        "illuminate/view": "^12.0|^13.0",
+        "symfony/process": "^7.2|^8.0"
+    },
+    "require-dev": {
+        "guzzlehttp/guzzle": "^7.8",
+        "larastan/larastan": "^3.0",
+        "laravel/pint": "^1.0",
+        "orchestra/testbench": "^10.0|^11.0",
+        "pestphp/pest": "^3.0|^4.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "AmjadIqbal\\SqlDashboard\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "AmjadIqbal\\SqlDashboard\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "AmjadIqbal\\SqlDashboard\\SqlDashboardServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "scripts": {
+        "test": "vendor/bin/pest --exclude-group=integration",
+        "pint": "vendor/bin/pint --test",
+        "analyse": "vendor/bin/phpstan analyse --memory-limit=1G"
+    }
+}
