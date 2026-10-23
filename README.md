@@ -9,8 +9,8 @@
 
 A self-hosted SQL dashboard for your Laravel app, in the spirit of Rails' Blazer. Your team saves SQL queries
 with typed variables, sees the results as a table and a line, bar or pie chart, downloads them as CSV, puts
-several on a dashboard, and gets an email or Slack message when a scheduled check returns rows or crosses a
-threshold. Every run is in an audit log with who ran it.
+several on a dashboard, and gets an email when a scheduled check returns rows or crosses a threshold
+(Slack too, untested; see below). Every run is in an audit log with who ran it.
 
 It is built to be safe to leave switched on: queries run **only on a separate read-only connection**, one
 `SELECT` or `WITH` statement at a time, inside the database's own read-only transaction, with a row limit and
@@ -39,7 +39,8 @@ Docs and demo: https://amjad.com.pk/laravel/packages/laravel-sql-dashboard
   no JavaScript library, no CDN.
 - **Dashboards** of several queries, with one form for the variables they share.
 - **Scheduled checks** every 5 minutes, hour or day: fail when the query returns any row, or when a value in
-  the first row crosses a threshold. Mail and Slack alerts when a check starts failing, passes again or errors.
+  the first row crosses a threshold. Mail alerts when a check starts failing, passes again or errors, and
+  Slack alerts (untested, see below).
 - **Audit log** of every run, export, check and refused attempt: who, when, the SQL, the variables, rows,
   time and outcome.
 - **Gates** for viewing, running and editing, closed by default outside `local`.
@@ -149,6 +150,8 @@ Checks need Laravel's scheduler, which most apps already run:
 The package schedules `sql-dashboard:run-checks` every minute (each check runs at its own interval) and
 `sql-dashboard:prune-audit` daily. For Slack, create an incoming webhook and set
 `SQL_DASHBOARD_SLACK_WEBHOOK_URL`. The webhook only comes from your environment, never from the browser.
+Slack delivery is implemented and tested only against a faked HTTP client, not a real Slack workspace yet;
+please [open an issue](https://github.com/amjadiqbal/laravel-sql-dashboard/issues) if it doesn't arrive.
 
 ## Using it
 
@@ -239,7 +242,7 @@ php artisan vendor:publish --tag=sql-dashboard-config
 | `limits.max_rows`, `limits.export_max_rows` | `1000`, `10000` | rows shown in the browser, rows in a CSV export |
 | `path`, `domain`, `middleware` | `sql-dashboard`, none, `['web']` | where the pages live; the gates always run after your middleware |
 | `schedule` | `true` | register `run-checks` (every minute) and `prune-audit` (daily) |
-| `alerts.slack_webhook_url` | `SQL_DASHBOARD_SLACK_WEBHOOK_URL` | Slack incoming webhook |
+| `alerts.slack_webhook_url` | `SQL_DASHBOARD_SLACK_WEBHOOK_URL` | Slack incoming webhook (untested against real Slack) |
 | `alerts.mail_domains` | `[]` (any) | e.g. `['acme.com']` to keep alert mail inside the company |
 | `intervals` | 5 minutes, hourly, daily | the check schedules people can pick |
 | `audit.retention_days` | `90` | `null` keeps the audit log forever |

@@ -3,6 +3,12 @@
 All notable changes to `laravel-sql-dashboard` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- Docs and art: Slack alerts are marked untested (tested only against a faked HTTP client); the art now says
+  "mail alerts".
+
 ## [0.1.0] - 2026-10-23
 
 First release.
