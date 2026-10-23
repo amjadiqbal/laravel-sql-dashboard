@@ -79,6 +79,8 @@ final class MysqlExecutor implements Executor
         foreach ([
             fn () => $stmt?->closeCursor(),
             fn () => $pdo->exec('ROLLBACK'),
+            // GET_LOCK() locks survive ROLLBACK; drop any this session holds (MySQL 5.7+, MariaDB 10.5+).
+            fn () => $pdo->query('SELECT RELEASE_ALL_LOCKS()')?->closeCursor(),
             fn () => $pdo->setAttribute($buffered, $wasBuffered),
             fn () => $pdo->exec('SET SESSION sql_select_limit = DEFAULT'),
             fn () => $pdo->exec($mariaDb ? 'SET SESSION max_statement_time = DEFAULT' : 'SET SESSION max_execution_time = DEFAULT'),

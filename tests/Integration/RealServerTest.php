@@ -3,6 +3,7 @@
 use AmjadIqbal\SqlDashboard\Audit\Actor;
 use AmjadIqbal\SqlDashboard\Exceptions\QueryFailed;
 use AmjadIqbal\SqlDashboard\Exceptions\QueryRefused;
+use AmjadIqbal\SqlDashboard\Execution\ConnectionVerifier;
 use AmjadIqbal\SqlDashboard\Execution\Drivers\MysqlExecutor;
 use AmjadIqbal\SqlDashboard\Execution\Drivers\PostgresExecutor;
 use AmjadIqbal\SqlDashboard\Execution\Limits;
@@ -118,4 +119,66 @@ it('leaves the session as it found it', function () {
 
 it('passes sql-dashboard:verify on the read-only user', function () {
     $this->artisan('sql-dashboard:verify')->expectsOutputToContain('Ready')->assertSuccessful();
+});
+
+it('refuses side-effect functions spelled with quotes, before they reach the server', function (string $sql) {
+    expect(fn () => it_run($sql))->toThrow(QueryRefused::class, 'is not allowed');
+    expect(Audit::query()->sole()->status)->toBe('refused');
+})->with(function () {
+    return IntegrationTestCase::pg()
+        ? [
+            'quoted advisory lock' => ['SELECT "pg_advisory_lock"(1)'],
+            'qualified quoted read_file' => ["SELECT pg_catalog.\"pg_read_file\"('/etc/passwd')"],
+            'fully quoted read_file' => ["SELECT \"pg_catalog\".\"pg_read_file\"('/etc/passwd')"],
+            'quoted dblink' => ["SELECT * FROM \"dblink\"('dbname=dash', 'DELETE FROM orders') AS t(x int)"],
+        ]
+        : [
+            'backticked get_lock' => ["SELECT `GET_LOCK`('x', 10)"],
+            'backticked load_file' => ["SELECT `LOAD_FILE`('/etc/passwd')"],
+            'qualified sys_exec' => ["SELECT `mysql`.`sys_exec`('id')"],
+        ];
+});
+
+it('refuses a user that can reach outside the database', function (string $connection, string $message) {
+    config(['sql-dashboard.connection' => $connection]);
+
+    expect(fn () => it_run('SELECT 1'))->toThrow(QueryRefused::class, $message);
+})->with(function () {
+    return IntegrationTestCase::pg()
+        ? [['files', 'member of pg_read_server_files'], ['other', 'member of pg_signal_backend']]
+        : [['files', 'FILE ON'], ['other', 'PROCESS ON']];
+});
+
+it('releases session-level locks a statement took, even with the guard bypassed', function () {
+    $dashboard = DB::connection('dashboard');
+    $sql = IntegrationTestCase::pg() ? 'SELECT pg_advisory_lock(424242)' : "SELECT GET_LOCK('sqld-test', 0)";
+    $executor = IntegrationTestCase::pg() ? new PostgresExecutor : new MysqlExecutor;
+
+    $executor->run($dashboard, new CompiledStatement($sql, [], []), Limits::fromConfig());
+
+    $held = IntegrationTestCase::pg()
+        ? (int) DB::connection('root')->selectOne("SELECT count(*) AS n FROM pg_locks WHERE locktype = 'advisory' AND objid = 424242")->n
+        : (int) (DB::connection('root')->selectOne("SELECT IS_USED_LOCK('sqld-test') IS NOT NULL AS n")->n);
+    expect($held)->toBe(0);
+});
+
+it('refuses PostgreSQL when dblink is installed and callable, and passes once EXECUTE is revoked', function () {
+    if (! IntegrationTestCase::pg()) {
+        $this->markTestSkipped('PostgreSQL only');
+    }
+    $root = DB::connection('root');
+    $root->statement('CREATE EXTENSION IF NOT EXISTS dblink');
+    $verifier = app(ConnectionVerifier::class);
+
+    try {
+        $verifier->forget();
+        expect(fn () => it_run('SELECT 1'))->toThrow(QueryRefused::class, 'can execute dblink');
+
+        $root->statement('REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC');
+        $verifier->forget();
+        expect((int) it_run('SELECT 1')->rows[0][0])->toBe(1);
+    } finally {
+        $root->statement('DROP EXTENSION IF EXISTS dblink');
+        $verifier->forget();
+    }
 });

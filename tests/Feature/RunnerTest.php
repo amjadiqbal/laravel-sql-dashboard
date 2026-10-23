@@ -62,6 +62,8 @@ it('lets SQLite itself refuse a write even if the guard were bypassed', function
     'delete' => 'DELETE FROM orders',
     'create' => 'CREATE TABLE x (id int)',
     'update' => 'UPDATE orders SET total = 0',
+    'load_extension' => "SELECT load_extension('/tmp/evil')",
+    'quoted load_extension' => "SELECT \"load_extension\"('/tmp/evil')",
 ]);
 
 it('refuses a connection that can write', function () {

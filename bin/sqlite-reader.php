@@ -26,11 +26,26 @@ $flags = defined('Pdo\Sqlite::ATTR_OPEN_FLAGS') ? constant('Pdo\Sqlite::ATTR_OPE
 $readOnly = defined('Pdo\Sqlite::OPEN_READONLY') ? constant('Pdo\Sqlite::OPEN_READONLY') : constant('PDO::SQLITE_OPEN_READONLY');
 
 try {
-    $pdo = new PDO('sqlite:'.$job['database'], null, null, [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        $flags => $readOnly,
-    ]);
+    $options = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, $flags => $readOnly];
+    // PHP 8.4+ returns a Pdo\Sqlite here, which (from 8.5) has setAuthorizer().
+    $pdo = method_exists(PDO::class, 'connect')
+        ? PDO::connect('sqlite:'.$job['database'], null, null, $options)
+        : new PDO('sqlite:'.$job['database'], null, null, $options);
     $pdo->exec('PRAGMA query_only = 1');
+
+    if (method_exists($pdo, 'setAuthorizer')) {
+        // SQLite's own parser reports every action the statement would take: allow reading only.
+        // Codes from sqlite3.h: 20 READ, 21 SELECT, 31 FUNCTION, 33 RECURSIVE. Everything else
+        // (ATTACH, PRAGMA, any write) is denied, and so are functions that touch files or load code.
+        $deniedFunctions = ['load_extension', 'readfile', 'writefile', 'edit', 'fts3_tokenizer'];
+        $pdo->setAuthorizer(static function (int $action, ?string $arg1, ?string $arg2) use ($deniedFunctions): int {
+            if ($action === 31) {
+                return in_array(strtolower((string) $arg2), $deniedFunctions, true) ? 1 : 0;
+            }
+
+            return in_array($action, [20, 21, 33], true) ? 0 : 1;
+        });
+    }
 
     $stmt = $pdo->prepare((string) $job['sql']);
     foreach ((array) ($job['bindings'] ?? []) as $i => $value) {
@@ -74,6 +89,7 @@ try {
     $message = $e->getMessage();
     $reply([
         'error' => preg_replace('/^SQLSTATE\[\w+\]: [^:]+: \d+ /', '', $message),
-        'read_only' => stripos($message, 'readonly') !== false || stripos($message, 'query_only') !== false || stripos($message, 'read-only') !== false,
+        'read_only' => stripos($message, 'readonly') !== false || stripos($message, 'query_only') !== false || stripos($message, 'read-only') !== false
+            || stripos($message, 'not authorized') !== false,
     ]);
 }

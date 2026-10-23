@@ -43,6 +43,10 @@ abstract class IntegrationTestCase extends TestCase
         $app['config']->set('database.connections.root', [...$base, ...$root]);
         $app['config']->set('database.connections.dashboard', [...$base, 'username' => 'dash_ro', 'password' => 'secret']);
         $app['config']->set('database.connections.writer', [...$base, 'username' => 'dash_rw', 'password' => 'secret']);
+        // SELECT-only, plus one power that reaches outside the database: pg_read_server_files on PostgreSQL, FILE on MySQL.
+        $app['config']->set('database.connections.files', [...$base, 'username' => 'dash_files', 'password' => 'secret']);
+        // SELECT-only plus PROCESS (other sessions' SQL) on MySQL; pg_signal_backend on PostgreSQL.
+        $app['config']->set('database.connections.other', [...$base, 'username' => 'dash_other', 'password' => 'secret']);
         $app['config']->set('sql-dashboard.connection', 'dashboard');
     }
 
@@ -66,7 +70,7 @@ abstract class IntegrationTestCase extends TestCase
             $admin = self::rootPdo('postgres');
             $admin->exec('DROP DATABASE IF EXISTS dash');
             $admin->exec('CREATE DATABASE dash');
-            foreach (['dash_ro', 'dash_rw'] as $role) {
+            foreach (['dash_ro', 'dash_rw', 'dash_files', 'dash_other'] as $role) {
                 $admin->exec("DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{$role}') THEN CREATE ROLE {$role} LOGIN PASSWORD 'secret'; END IF; END \$\$");
             }
             $pdo = self::rootPdo('dash');
@@ -92,17 +96,23 @@ abstract class IntegrationTestCase extends TestCase
         }
 
         if (self::pg()) {
-            $pdo->exec('GRANT USAGE ON SCHEMA public TO dash_ro, dash_rw');
-            $pdo->exec('GRANT SELECT ON ALL TABLES IN SCHEMA public TO dash_ro, dash_rw');
+            $pdo->exec('GRANT USAGE ON SCHEMA public TO dash_ro, dash_rw, dash_files, dash_other');
+            $pdo->exec('GRANT SELECT ON ALL TABLES IN SCHEMA public TO dash_ro, dash_rw, dash_files, dash_other');
             $pdo->exec('GRANT INSERT ON orders TO dash_rw');
+            $pdo->exec('GRANT pg_read_server_files TO dash_files');
+            $pdo->exec('GRANT pg_signal_backend TO dash_other');
         } else {
-            foreach (['dash_ro', 'dash_rw'] as $user) {
+            foreach (['dash_ro', 'dash_rw', 'dash_files', 'dash_other'] as $user) {
                 $pdo->exec("DROP USER IF EXISTS '{$user}'@'%'");
                 $pdo->exec("CREATE USER '{$user}'@'%' IDENTIFIED BY 'secret'");
             }
             $pdo->exec("GRANT SELECT, SHOW VIEW ON dash.* TO 'dash_ro'@'%'");
             $pdo->exec("GRANT SELECT ON dash.* TO 'dash_rw'@'%'");
             $pdo->exec("GRANT INSERT ON dash.orders TO 'dash_rw'@'%'");
+            $pdo->exec("GRANT SELECT ON dash.* TO 'dash_files'@'%'");
+            $pdo->exec("GRANT FILE ON *.* TO 'dash_files'@'%'");
+            $pdo->exec("GRANT SELECT ON dash.* TO 'dash_other'@'%'");
+            $pdo->exec("GRANT PROCESS ON *.* TO 'dash_other'@'%'");
         }
     }
 }

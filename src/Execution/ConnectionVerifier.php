@@ -16,9 +16,10 @@ use Throwable;
  *
  * MySQL / MariaDB: every privilege in SHOW GRANTS must be a read privilege
  * (SELECT, SHOW VIEW, USAGE...), or the server must be super_read_only.
- * PostgreSQL: the user must not be a superuser and must not own, or hold
- * INSERT / UPDATE / DELETE / TRUNCATE on, any table, view or sequence, unless
- * the server is a standby. SQLite: the connection must open the file read-only.
+ * PostgreSQL: the user must not be a superuser, must not be able to read or
+ * write server files, run programs, signal other sessions or use dblink or a
+ * foreign server, and (unless the server is a standby) must not own, or hold
+ * INSERT / UPDATE / DELETE / TRUNCATE on, any table, view or sequence. SQLite: the connection must open the file read-only.
  *
  * Results are kept for a minute per connection, so a dashboard of ten
  * queries checks once.
@@ -26,7 +27,8 @@ use Throwable;
 final class ConnectionVerifier
 {
     private const READ_PRIVILEGES = [
-        'USAGE', 'SELECT', 'SHOW VIEW', 'SHOW DATABASES', 'PROCESS', 'REPLICATION CLIENT',
+        // Not PROCESS (other sessions' SQL), FILE (server files), SUPER or any write privilege.
+        'USAGE', 'SELECT', 'SHOW VIEW', 'SHOW DATABASES', 'REPLICATION CLIENT',
         'BINLOG MONITOR', 'SLAVE MONITOR', 'REPLICA MONITOR',
     ];
 
@@ -97,7 +99,7 @@ final class ConnectionVerifier
         }
 
         if ($writes !== []) {
-            throw new QueryRefused("The '{$connection->getName()}' connection can write (".$this->short(implode('; ', $writes))."). Use a database user that only has SELECT: CREATE USER 'dashboard'@'%' IDENTIFIED BY '...'; GRANT SELECT, SHOW VIEW ON your_db.* TO 'dashboard'@'%';");
+            throw new QueryRefused("The '{$connection->getName()}' connection can write or reach outside the database (".$this->short(implode('; ', $writes))."). Use a database user that only has SELECT: CREATE USER 'dashboard'@'%' IDENTIFIED BY '...'; GRANT SELECT, SHOW VIEW ON your_db.* TO 'dashboard'@'%';");
         }
     }
 
@@ -106,11 +108,30 @@ final class ConnectionVerifier
         $pdo = $connection->getPdo();
         $role = $pdo->query('SELECT r.rolsuper, pg_is_in_recovery() AS standby FROM pg_roles r WHERE r.rolname = current_user')?->fetch(PDO::FETCH_ASSOC) ?: [];
 
+        if (filter_var($role['rolsuper'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+            throw new QueryRefused("The '{$connection->getName()}' connection logs in as a superuser, which can write anything and read server files. Use a role that only has SELECT.");
+        }
+
+        // Powers that reach outside the database even in a read-only transaction (also on a standby).
+        $power = $pdo->query(<<<'SQL'
+            SELECT 'is a member of ' || r.rolname AS what FROM pg_roles r
+            WHERE r.rolname IN ('pg_read_server_files', 'pg_write_server_files', 'pg_execute_server_program', 'pg_signal_backend')
+              AND pg_has_role(current_user, r.oid, 'MEMBER')
+            UNION ALL
+            SELECT 'can execute ' || p.oid::regprocedure::text FROM pg_proc p
+            WHERE (p.proname LIKE 'dblink%' OR p.proname IN ('lo_import', 'lo_export', 'pg_read_file', 'pg_read_binary_file', 'pg_ls_dir'))
+              AND has_function_privilege(p.oid, 'EXECUTE')
+            UNION ALL
+            SELECT 'can use the foreign server ' || s.srvname FROM pg_foreign_server s
+            WHERE has_server_privilege(s.oid, 'USAGE')
+            LIMIT 1
+            SQL)?->fetch(PDO::FETCH_ASSOC);
+        if (is_array($power)) {
+            throw new QueryRefused("The '{$connection->getName()}' connection's role {$power['what']}, which reaches outside the database (server files, programs, other sessions or another connection). Use a role with only SELECT: revoke that membership, or REVOKE EXECUTE on those functions FROM PUBLIC.");
+        }
+
         if (filter_var($role['standby'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
             return; // a hot standby cannot be written to
-        }
-        if (filter_var($role['rolsuper'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
-            throw new QueryRefused("The '{$connection->getName()}' connection logs in as a superuser, which can write anything. Use a role that only has SELECT.");
         }
 
         $offender = $pdo->query(<<<'SQL'

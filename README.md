@@ -15,7 +15,8 @@ several on a dashboard, and gets an email when a scheduled check returns rows or
 It is built to be safe to leave switched on: queries run **only on a separate read-only connection**, one
 `SELECT` or `WITH` statement at a time, inside the database's own read-only transaction, with a row limit and
 a statement timeout on MySQL, MariaDB, PostgreSQL and SQLite. A connection that can write is refused. Variables
-are always bound as parameters. Nobody gets in outside your local machine until you say who can.
+are always bound as parameters. Until you define the gates, the dashboard opens only when
+`app()->environment('local')` is true; every other environment gets a 403.
 
 Docs and demo: https://amjad.com.pk/laravel/packages/laravel-sql-dashboard
 
@@ -120,8 +121,8 @@ Ready: the connection is read-only and SELECT 1 returned 1 in 9 ms.
 
 ### 2. Decide who can use it
 
-Open `/sql-dashboard`. In the `local` environment you are let in; anywhere else every page is a 403 until you
-define the three gates, for example in `AppServiceProvider::boot()`:
+Open `/sql-dashboard`. While `app()->environment('local')` is true you are let in; in every other environment
+every page is a 403 until you define the three gates, for example in `AppServiceProvider::boot()`:
 
 ```php
 use Illuminate\Support\Facades\Gate;
@@ -191,26 +192,40 @@ check, console), the SQL, the variable values, rows, milliseconds and the outcom
 
 ## Security
 
-The dashboard runs SQL typed into a browser, so it is built as three independent locks. Each one stops a
-write on its own.
+The dashboard runs SQL typed into a browser. It protects your data with three checks: a dialect-aware
+tokenizer (not a full SQL parser), the database's own read-only transaction, and a check that the database
+user cannot write. A write to your tables is stopped by the read-only transaction and by the user's
+privileges, each on its own. Side effects that a read-only transaction does not cover (reading server files,
+locks that outlive the transaction, opening another connection) are stopped by the tokenizer's deny-list,
+backed by the user check refusing roles that have those powers. It is not a sandbox: see the limits below.
 
-1. **The statement allow-list.** A lexer that reads SQL the way your database does (strings, quoted names,
-   nested PostgreSQL comments, dollar quotes, MySQL's `--` and `#` rules) checks that it is **one** `SELECT`
-   or `WITH` statement. It refuses `INSERT`, `UPDATE`, `DELETE`, `MERGE`, DDL, `INTO` (including
-   `INTO OUTFILE`), locking reads (`FOR UPDATE`, `FOR SHARE`), a second statement after a semicolon, writes
-   hidden in a CTE (`WITH x AS (DELETE ... RETURNING *) SELECT ...`), raw `?`, `$1` or `:name` parameters,
-   MySQL executable comments (`/*! ... */`), and functions with side effects (`set_config`, advisory locks,
-   `nextval`, `pg_read_file`, `dblink`, `GET_LOCK`, `LOAD_FILE`, `load_extension` and more). Where text could
-   be read two ways, it refuses rather than guesses.
+1. **The statement allow-list (a tokenizer).** It reads SQL the way your database does (strings, quoted
+   names, nested PostgreSQL comments, dollar quotes, MySQL's `--` and `#` rules) and checks that it is
+   **one** `SELECT` or `WITH` statement. It refuses `INSERT`, `UPDATE`, `DELETE`, `MERGE`, DDL, `INTO`
+   (including `INTO OUTFILE`), locking reads (`FOR UPDATE`, `FOR SHARE`), a second statement after a
+   semicolon, writes hidden in a CTE (`WITH x AS (DELETE ... RETURNING *) SELECT ...`), raw `?`, `$1` or
+   `:name` parameters, MySQL executable comments (`/*! ... */`), PostgreSQL `U&"..."` escaped names, and a
+   deny-list of functions with side effects (`set_config`, advisory locks, `nextval`, `pg_read_file` and the
+   other server-file functions, large objects, `dblink`, `GET_LOCK`, `LOAD_FILE`, `load_extension` and more),
+   however the name is written: bare, `"quoted"`, `` `quoted` ``, `[quoted]` or schema-qualified. Where text
+   could be read two ways, it refuses rather than guesses. It is a deny-list, not an allow-list of safe
+   functions, because an allow-list would refuse your own functions and extensions; the next two checks are
+   what make a missed name harmless.
 2. **The database's own read-only mode.** MySQL and MariaDB run each query in `START TRANSACTION READ ONLY`,
    PostgreSQL in `BEGIN READ ONLY` behind `DECLARE ... CURSOR` (which only accepts a query), and SQLite opens
-   the file read-only with `query_only` on. The database itself refuses a write, even one the allow-list
-   missed. The test suite proves this by sending writes straight to this layer with an admin login.
-3. **A connection that cannot write.** Before running, the dashboard checks the connection's user: on MySQL
-   and MariaDB every privilege in `SHOW GRANTS` must be a read privilege; on PostgreSQL the role must not be
-   a superuser and must not own, or hold `INSERT`, `UPDATE`, `DELETE` or `TRUNCATE` on, any table; on SQLite
-   the connection must open the file read-only. Otherwise nothing runs. A read replica (`super_read_only`,
-   or a PostgreSQL standby) passes. The dashboard also refuses the connection it stores its own data on.
+   the file read-only with `query_only` on, in a separate process (on PHP 8.5, SQLite's authorizer also
+   allows only reads). The database itself refuses a write, even one the tokenizer missed; the test suite
+   proves this by sending writes straight to this layer with an admin login. After each query the dashboard
+   releases any advisory (PostgreSQL) or `GET_LOCK` (MySQL) lock the session took.
+3. **A user that cannot write or reach outside the database.** Before running, the dashboard checks the
+   connection's user. On MySQL and MariaDB every privilege in `SHOW GRANTS` must be a read privilege
+   (`SELECT`, `SHOW VIEW`, ...; `FILE`, `PROCESS`, `SUPER` and roles are refused). On PostgreSQL the role must
+   not be a superuser, must not be a member of `pg_read_server_files`, `pg_write_server_files`,
+   `pg_execute_server_program` or `pg_signal_backend`, must not be able to execute `dblink` or the
+   server-file functions, must not have `USAGE` on a foreign server, and must not own, or hold `INSERT`,
+   `UPDATE`, `DELETE` or `TRUNCATE` on, any table. On SQLite the connection must open the file read-only.
+   Otherwise nothing runs. A read replica (`super_read_only`, or a PostgreSQL standby) skips the write
+   checks but not the others. The dashboard also refuses the connection it stores its own data on.
 
 And around them:
 
@@ -221,12 +236,21 @@ And around them:
 | Size limit | stops reading at 16 MB | same | same | same |
 
 Variables are bound as parameters by PDO, never put into the SQL. CSV exports neutralise formula cells.
-Alert e-mails contain up to 10 result rows: limit who can receive them with `alerts.mail_domains`.
+Alert e-mails contain up to `alerts.rows_in_alert` (10) result rows: limit who can receive them with
+`alerts.mail_domains`.
 Private queries and dashboards are invisible (404) to everyone but their owner. Session settings the
 dashboard changes are put back after each run.
 
-What it does **not** do is hide columns. Anyone who can write SQL can read every table the read-only user
-can, so grant that user only the tables (or views) your team should see.
+What it does **not** do:
+
+- **Hide columns.** Anyone who can write SQL can read every table the read-only user can, so grant that user
+  only the tables (or views) your team should see.
+- **Know your server's own add-ons.** MySQL loadable functions (`CREATE FUNCTION ... SONAME`) can be called by
+  any user and cannot be seen from a read-only one; the tokenizer refuses the well-known `sys_exec` family,
+  but don't install such functions on a server the dashboard reads.
+- **Protect shared work from editors.** Anyone who passes the `editSqlDashboardQueries` gate can edit or
+  delete every shared query, dashboard and check, as in Blazer. Keep that gate for people you trust with the
+  SQL; private queries stay private to their owner.
 
 ## Configuration
 
@@ -244,6 +268,7 @@ php artisan vendor:publish --tag=sql-dashboard-config
 | `schedule` | `true` | register `run-checks` (every minute) and `prune-audit` (daily) |
 | `alerts.slack_webhook_url` | `SQL_DASHBOARD_SLACK_WEBHOOK_URL` | Slack incoming webhook (untested against real Slack) |
 | `alerts.mail_domains` | `[]` (any) | e.g. `['acme.com']` to keep alert mail inside the company |
+| `alerts.rows_in_alert` | `10` | result rows included in an alert e-mail |
 | `intervals` | 5 minutes, hourly, daily | the check schedules people can pick |
 | `audit.retention_days` | `90` | `null` keeps the audit log forever |
 

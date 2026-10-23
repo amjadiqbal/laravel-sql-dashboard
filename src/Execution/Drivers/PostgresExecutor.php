@@ -73,6 +73,12 @@ final class PostgresExecutor implements Executor
             } catch (Throwable) {
                 // the transaction is gone either way
             }
+            try {
+                // Session-level advisory locks survive ROLLBACK; drop any this connection holds.
+                $pdo->query('SELECT pg_advisory_unlock_all()');
+            } catch (Throwable) {
+                // nothing to release
+            }
         }
 
         return new Result($columns, $collector->rows, $collector->truncated);

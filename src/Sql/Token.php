@@ -22,6 +22,19 @@ final readonly class Token
         return strtoupper($this->text);
     }
 
+    /** The name a Word or QuotedIdentifier stands for: quotes removed, doubled quote characters undone. */
+    public function identifierName(): string
+    {
+        if ($this->type !== TokenType::QuotedIdentifier || strlen($this->text) < 2) {
+            return $this->text;
+        }
+        $open = $this->text[0];
+        $close = $open === '[' ? ']' : $open;
+        $inner = substr($this->text, 1, -1);
+
+        return $open === '[' ? $inner : str_replace($close.$close, $close, $inner);
+    }
+
     /** The variable name of a {name} token. */
     public function variableName(): string
     {

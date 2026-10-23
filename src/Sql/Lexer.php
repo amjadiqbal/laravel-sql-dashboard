@@ -95,6 +95,10 @@ final class Lexer
                 $this->push(TokenType::Number, $start);
             } elseif (ctype_alpha($c) || $c === '_' || ord($c) >= 0x80 || ($c === '$' && $this->dialect === Dialect::MySql)) {
                 $this->word();
+                if ($this->dialect === Dialect::Postgres && $this->pos - $start === 1 && ($c === 'u' || $c === 'U') && substr($this->sql, $this->pos, 2) === '&"') {
+                    // U&"\0070g_read_file" spells a name in escapes the guard cannot compare.
+                    throw new QueryRefused('Unicode-escaped names (U&"...") are not allowed: write the name plainly.');
+                }
                 if ($this->pos - $start === 1 && ($c === 'e' || $c === 'E') && ($this->sql[$this->pos] ?? '') === "'" && $this->dialect === Dialect::Postgres) {
                     // E'...' escape string: backslashes escape.
                     $this->quoted($this->pos, "'", TokenType::String, true, $start);

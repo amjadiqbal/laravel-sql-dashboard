@@ -161,3 +161,38 @@ it('allows optimizer hints and slow functions (the timeout handles those)', func
     expect(guard('SELECT /*+ MAX_EXECUTION_TIME(100) */ SLEEP(1)', Dialect::MySql))->toContain('SLEEP')
         ->and(guard('SELECT pg_sleep(1)', Dialect::Postgres))->toContain('pg_sleep');
 });
+
+it('refuses side-effect functions however the name is quoted or qualified', function (string $sql, Dialect $d, string $name) {
+    expect(fn () => guard($sql, $d))->toThrow(QueryRefused::class, "{$name}() is not allowed");
+})->with([
+    'pg double-quoted advisory lock' => ['SELECT "pg_advisory_lock"(1)', Dialect::Postgres, 'pg_advisory_lock'],
+    'pg qualified quoted read_file' => ["SELECT pg_catalog.\"pg_read_file\"('/etc/passwd')", Dialect::Postgres, 'pg_read_file'],
+    'pg fully quoted read_file' => ["SELECT \"pg_catalog\".\"pg_read_file\"('/etc/passwd')", Dialect::Postgres, 'pg_read_file'],
+    'pg quoted dblink in FROM' => ["SELECT * FROM \"dblink\"('host=x', 'DELETE FROM t') AS t(x int)", Dialect::Postgres, 'dblink'],
+    'pg upper-case quoted' => ['SELECT "PG_ADVISORY_LOCK"(1)', Dialect::Postgres, 'pg_advisory_lock'],
+    'pg comment before paren' => ["SELECT pg_read_file /* c */ ('/etc/passwd')", Dialect::Postgres, 'pg_read_file'],
+    'pg quoted set_config' => ["SELECT \"set_config\"('role', 'x', false)", Dialect::Postgres, 'set_config'],
+    'pg quoted nextval' => ["SELECT \"nextval\"('s')", Dialect::Postgres, 'nextval'],
+    'pg lo_export' => ["SELECT lo_export(1, '/tmp/x')", Dialect::Postgres, 'lo_export'],
+    'pg ls_dir family' => ['SELECT pg_ls_waldir()', Dialect::Postgres, 'pg_ls_waldir'],
+    'pg terminate family' => ['SELECT "pg_terminate_backend"(1)', Dialect::Postgres, 'pg_terminate_backend'],
+    'pg logical message' => ["SELECT pg_logical_emit_message(true, 'x', 'y')", Dialect::Postgres, 'pg_logical_emit_message'],
+    'mysql backticked get_lock' => ["SELECT `GET_LOCK`('x', 10)", Dialect::MySql, 'get_lock'],
+    'mysql qualified backticked load_file' => ["SELECT `mysql`.`load_file`('/etc/passwd')", Dialect::MySql, 'load_file'],
+    'mysql backticked udf' => ["SELECT `sys_exec`('id')", Dialect::MySql, 'sys_exec'],
+    'sqlite double-quoted load_extension' => ["SELECT \"load_extension\"('x')", Dialect::Sqlite, 'load_extension'],
+    'sqlite bracketed load_extension' => ["SELECT [load_extension]('x')", Dialect::Sqlite, 'load_extension'],
+    'sqlite backticked load_extension' => ["SELECT `load_extension`('x')", Dialect::Sqlite, 'load_extension'],
+    'sqlite quoted readfile' => ["SELECT \"readfile\"('/etc/passwd')", Dialect::Sqlite, 'readfile'],
+]);
+
+it('refuses PostgreSQL Unicode-escaped names', function () {
+    guard("SELECT U&\"\\0070g_read_file\"('/etc/passwd')", Dialect::Postgres);
+})->throws(QueryRefused::class, 'Unicode-escaped names');
+
+it('still allows quoted column and table names and ordinary functions', function () {
+    expect(guard('SELECT "Total", count("id"), "public"."orders"."day" FROM "public"."orders" GROUP BY 1, 3', Dialect::Postgres))->toContain('count("id")')
+        ->and(guard("SELECT `status`, COUNT(*), DATE_FORMAT(`created_on`, '%Y-%m') FROM `orders` GROUP BY 1, 3", Dialect::MySql))->toContain('DATE_FORMAT')
+        ->and(guard('SELECT [status], count(*) FROM [orders] GROUP BY [status]', Dialect::Sqlite))->toContain('[orders]')
+        ->and(guard("SELECT U&'d\\0061t\\+000061' AS s", Dialect::Postgres))->toContain("U&'");
+});
