@@ -122,6 +122,12 @@ final class StatementGuard
                 continue;
             }
 
+            // Invisible or unusual space characters (byte order mark, zero-width joiner, no-break space)
+            // glued to a word could make the database and this check read different words.
+            if (preg_match('/[\p{Cf}\p{Z}]/u', $token->text) === 1 || ! mb_check_encoding($token->text, 'UTF-8')) {
+                throw new QueryRefused('The statement has an invisible or unusual space character outside quotes: retype it with plain spaces.');
+            }
+
             $word = $token->upper();
             $isCall = $next !== null && $next->is(TokenType::Punctuation, '(');
 
@@ -131,6 +137,10 @@ final class StatementGuard
 
             if (in_array($word, self::DENIED_WORDS, true)) {
                 throw new QueryRefused("{$word} is not allowed: this dashboard only reads. (If it is a column name, put it in quotes.)");
+            }
+
+            if ($word === 'NEXT' && $next !== null && $next->is(TokenType::Word, 'VALUE')) {
+                throw new QueryRefused('NEXT VALUE FOR advances a sequence, which is a write: this dashboard only reads.');
             }
 
             if ($word === 'FOR' && $next !== null && $next->type === TokenType::Word && in_array($next->upper(), ['SHARE', 'KEY', 'NO'], true)) {

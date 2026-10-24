@@ -199,8 +199,9 @@ privileges, each on its own. Side effects that a read-only transaction does not 
 locks that outlive the transaction, opening another connection) are stopped by the tokenizer's deny-list,
 backed by the user check refusing roles that have those powers. It is not a sandbox: see the limits below.
 
-1. **The statement allow-list (a tokenizer).** It reads SQL the way your database does (strings, quoted
-   names, nested PostgreSQL comments, dollar quotes, MySQL's `--` and `#` rules) and checks that it is
+1. **The statement allow-list: a dialect-aware tokenizer (not a full SQL parser).** It splits SQL into
+   tokens with each database's quoting and comment rules (strings, quoted names, nested PostgreSQL
+   comments, dollar quotes, MySQL's `--` and `#` rules) and checks that it is
    **one** `SELECT` or `WITH` statement. It refuses `INSERT`, `UPDATE`, `DELETE`, `MERGE`, DDL, `INTO`
    (including `INTO OUTFILE`), locking reads (`FOR UPDATE`, `FOR SHARE`), a second statement after a
    semicolon, writes hidden in a CTE (`WITH x AS (DELETE ... RETURNING *) SELECT ...`), raw `?`, `$1` or
@@ -222,8 +223,11 @@ backed by the user check refusing roles that have those powers. It is not a sand
    (`SELECT`, `SHOW VIEW`, ...; `FILE`, `PROCESS`, `SUPER` and roles are refused). On PostgreSQL the role must
    not be a superuser, must not be a member of `pg_read_server_files`, `pg_write_server_files`,
    `pg_execute_server_program` or `pg_signal_backend`, must not be able to execute `dblink` or the
-   server-file functions, must not have `USAGE` on a foreign server, and must not own, or hold `INSERT`,
-   `UPDATE`, `DELETE` or `TRUNCATE` on, any table. On SQLite the connection must open the file read-only.
+   server-file functions, must not be able to execute another role's `SECURITY DEFINER` function (it runs
+   with its owner's powers, which a read-only transaction does not limit outside the session), must not
+   have `USAGE` on a foreign server, and must not own, or hold `INSERT`,
+   `UPDATE`, `DELETE` or `TRUNCATE` on, any table, view, materialized view or foreign table (or `UPDATE`
+   on any sequence). On SQLite the connection must open the file read-only.
    Otherwise nothing runs. A read replica (`super_read_only`, or a PostgreSQL standby) skips the write
    checks but not the others. The dashboard also refuses the connection it stores its own data on.
 

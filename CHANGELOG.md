@@ -3,6 +3,26 @@
 All notable changes to `laravel-sql-dashboard` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.1.2] - 2026-10-24
+
+### Security
+Found by an internal adversarial sweep (278 attempts on PostgreSQL 16, MySQL 8.4, MariaDB 11 and SQLite).
+- PostgreSQL: a role that could execute another role's `SECURITY DEFINER` function was accepted. Such a
+  function runs with its owner's powers, and the read-only transaction does not limit what it does outside
+  the session: in the sweep, an admin-created function calling `dblink_exec` deleted a row. The connection
+  check now refuses a role that can execute a `SECURITY DEFINER` function it does not own (outside
+  `pg_catalog` and `information_schema`). Needs such a function to exist on the server; the dashboard user
+  cannot create one.
+- The statement check now refuses invisible or unusual space characters (byte order mark, zero-width
+  space/joiner, no-break space) outside quotes, which could make it and the database read different words.
+  No write got through this way: the servers rejected the statements.
+- MariaDB `NEXT VALUE FOR sequence` is now refused by the statement check (MariaDB's read-only transaction
+  already refused it).
+
+### Changed
+- README and code docs describe the statement check as a dialect-aware tokenizer (not a full SQL parser),
+  and the connection check's scope (tables, views, materialized views, foreign tables and sequences).
+
 ## [0.1.1] - 2026-10-23
 
 ### Security

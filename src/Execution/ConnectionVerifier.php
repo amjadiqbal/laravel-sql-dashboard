@@ -17,8 +17,8 @@ use Throwable;
  * MySQL / MariaDB: every privilege in SHOW GRANTS must be a read privilege
  * (SELECT, SHOW VIEW, USAGE...), or the server must be super_read_only.
  * PostgreSQL: the user must not be a superuser, must not be able to read or
- * write server files, run programs, signal other sessions or use dblink or a
- * foreign server, and (unless the server is a standby) must not own, or hold
+ * write server files, run programs, signal other sessions, use dblink or a
+ * foreign server, or execute another role's SECURITY DEFINER function, and (unless the server is a standby) must not own, or hold
  * INSERT / UPDATE / DELETE / TRUNCATE on, any table, view or sequence. SQLite: the connection must open the file read-only.
  *
  * Results are kept for a minute per connection, so a dashboard of ten
@@ -120,6 +120,14 @@ final class ConnectionVerifier
             UNION ALL
             SELECT 'can execute ' || p.oid::regprocedure::text FROM pg_proc p
             WHERE (p.proname LIKE 'dblink%' OR p.proname IN ('lo_import', 'lo_export', 'pg_read_file', 'pg_read_binary_file', 'pg_ls_dir'))
+              AND has_function_privilege(p.oid, 'EXECUTE')
+            UNION ALL
+            -- A SECURITY DEFINER function runs with its owner's powers, which a read-only transaction does
+            -- not limit outside this session (dblink, files): only functions the role itself owns are fine.
+            SELECT 'can execute the SECURITY DEFINER function ' || p.oid::regprocedure::text FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE p.prosecdef AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+              AND NOT pg_has_role(current_user, p.proowner, 'USAGE')
               AND has_function_privilege(p.oid, 'EXECUTE')
             UNION ALL
             SELECT 'can use the foreign server ' || s.srvname FROM pg_foreign_server s

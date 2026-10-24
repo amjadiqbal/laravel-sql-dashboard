@@ -35,7 +35,7 @@ for server in $SERVERS; do
   docker rm -f "$name" >/dev/null 2>&1
   if docker run -d --name "$name" "${args[@]}" -p "$port:$([ $driver = pgsql ] && echo 5432 || echo 3306)" "$image" >/dev/null &&
      wait_for "$driver" "$port" &&
-     SQL_DASHBOARD_IT_DRIVER=$driver SQL_DASHBOARD_IT_PORT=$port vendor/bin/pest --group=integration; then
+     SQL_DASHBOARD_IT_DRIVER=$driver SQL_DASHBOARD_IT_PORT=$port SQL_DASHBOARD_SWEEP_LOG=${SQL_DASHBOARD_SWEEP_LOG:-} vendor/bin/pest --group=integration; then
     RESULTS+=("pass  integration $image")
   else
     RESULTS+=("FAIL  integration $image"); FAILED=1

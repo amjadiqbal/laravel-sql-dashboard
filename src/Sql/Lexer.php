@@ -7,7 +7,8 @@ namespace AmjadIqbal\SqlDashboard\Sql;
 use AmjadIqbal\SqlDashboard\Exceptions\QueryRefused;
 
 /**
- * Splits SQL into tokens the way the target database reads it.
+ * A dialect-aware tokenizer (not a full SQL parser): splits SQL into tokens
+ * using each database's quoting and comment rules.
  *
  * The point is to know, for every character, whether it is code or sits
  * inside a string, a quoted identifier or a comment, so the guard can see
