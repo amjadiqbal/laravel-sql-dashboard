@@ -215,8 +215,9 @@ Tested against 278 bypass attempts on PostgreSQL 16, MySQL 8.4, MariaDB 11 and S
    what make a missed name harmless.
 2. **The database's own read-only mode.** MySQL and MariaDB run each query in `START TRANSACTION READ ONLY`,
    PostgreSQL in `BEGIN READ ONLY` behind `DECLARE ... CURSOR` (which only accepts a query), and SQLite opens
-   the file read-only with `query_only` on, in a separate process (on PHP 8.5, SQLite's authorizer also
-   allows only reads). The database itself refuses a write, even one the tokenizer missed; the test suite
+   the file read-only with `query_only` on, in a separate process where SQLite's authorizer allows only
+   reads (through ext-sqlite3 on every supported PHP version; without ext-sqlite3 the PDO fallback has the
+   authorizer only on PHP 8.5+). The database itself refuses a write, even one the tokenizer missed; the test suite
    proves this by sending writes straight to this layer with an admin login. After each query the dashboard
    releases any advisory (PostgreSQL) or `GET_LOCK` (MySQL) lock the session took.
 3. **A user that cannot write or reach outside the database.** Before running, the dashboard checks the
