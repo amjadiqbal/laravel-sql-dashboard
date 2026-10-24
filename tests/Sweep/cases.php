@@ -162,6 +162,7 @@ return [
         'attach' => ["ATTACH DATABASE '/tmp/sweep.db' AS s", 'guard'],
         'detach' => ['DETACH DATABASE main', 'guard'],
         'vacuum into' => ["VACUUM INTO '/tmp/sweep.db'", 'guard'],
+        'stacked vacuum into' => ["SELECT 1; VACUUM INTO '/tmp/sweep.db'", 'guard'],
         'replace into' => ['REPLACE INTO orders (id) VALUES (1)', 'guard'],
         'insert or replace' => ['INSERT OR REPLACE INTO orders (id) VALUES (1)', 'guard'],
         'upsert' => ['INSERT INTO orders (id) VALUES (1) ON CONFLICT DO NOTHING', 'guard'],

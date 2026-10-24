@@ -64,7 +64,20 @@ it('lets SQLite itself refuse a write even if the guard were bypassed', function
     'update' => 'UPDATE orders SET total = 0',
     'load_extension' => "SELECT load_extension('/tmp/evil')",
     'quoted load_extension' => "SELECT \"load_extension\"('/tmp/evil')",
+    'vacuum into another file' => "VACUUM INTO '/tmp/sql-dashboard-vacuum-test.db'",
+    'attach another file' => "ATTACH DATABASE '/tmp/sql-dashboard-attach-test.db' AS x",
 ]);
+
+it('never creates a file when SQLite is asked to write one with the guard bypassed', function () {
+    @unlink('/tmp/sql-dashboard-vacuum-test.db');
+    try {
+        (new SqliteExecutor)->run(DB::connection('dashboard'), new CompiledStatement("VACUUM INTO '/tmp/sql-dashboard-vacuum-test.db'", [], []), Limits::fromConfig());
+    } catch (QueryFailed) {
+        // expected
+    }
+
+    expect(file_exists('/tmp/sql-dashboard-vacuum-test.db'))->toBeFalse();
+});
 
 it('refuses a connection that can write', function () {
     config(['sql-dashboard.connection' => 'seed']);

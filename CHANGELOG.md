@@ -18,6 +18,10 @@ Found by an internal adversarial sweep (278 attempts on PostgreSQL 16, MySQL 8.4
   No write got through this way: the servers rejected the statements.
 - MariaDB `NEXT VALUE FOR sequence` is now refused by the statement check (MariaDB's read-only transaction
   already refused it).
+- SQLite on PHP 8.3 and 8.4: with the statement check skipped, `VACUUM INTO '<path>'` (refused end to end by
+  the statement check) still created a file at that path, because SQLite allows it on a read-only database
+  and PDO only has SQLite's authorizer from PHP 8.5. The SQLite reader now uses ext-sqlite3, whose authorizer
+  exists on every supported PHP, to allow reads only (falling back to PDO when ext-sqlite3 is missing).
 
 ### Changed
 - README and code docs describe the statement check as a dialect-aware tokenizer (not a full SQL parser),
