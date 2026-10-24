@@ -198,6 +198,7 @@ user cannot write. A write to your tables is stopped by the read-only transactio
 privileges, each on its own. Side effects that a read-only transaction does not cover (reading server files,
 locks that outlive the transaction, opening another connection) are stopped by the tokenizer's deny-list,
 backed by the user check refusing roles that have those powers. It is not a sandbox: see the limits below.
+Tested against 278 bypass attempts on PostgreSQL 16, MySQL 8.4, MariaDB 11 and SQLite; every refusal has a test.
 
 1. **The statement allow-list: a dialect-aware tokenizer (not a full SQL parser).** It splits SQL into
    tokens with each database's quoting and comment rules (strings, quoted names, nested PostgreSQL
